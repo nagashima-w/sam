@@ -1,0 +1,198 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: "S3 Bucket Name"
+
+Resources:
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub ${ProductId}DatadogPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Resource: '*'
+                Action:
+                - cloudwatch:*
+                - logs:*
+                - lambda:listfunctions*
+                - s3:*
+                - apigateway:*
+
+  RestAPI:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: restapi
+
+  GatewayResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      RestApiId: !Ref Api
+      ParentId: !GetAtt Api.RootResourceId  
+      PathPart: !Sub "${FunctionName}"
+
+  APIMethod:
+    Type: AWS::ApiGateway::Method
+    Properties: 
+      RestApiId: !Ref RestAPI
+      ResourceId: !Ref GatewayResource
+      AuthorizationType: None
+      HttpMethod: POST
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${Lambda}/invocations"
+    DependsOn: "LambdaPermission"
+ 
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Sub "${FunctionName}"
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+
+  APIGatewayRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: apigateway.amazonaws.com
+          Action: sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: APIGatewayLoggingRole
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Resource: '*'
+                Action:
+                - lambda:InvokeFunction
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:DescribeLogGroups
+                - logs:DescribeLogStreams
+                - logs:PutLogEvents
+                - logs:GetLogEvents
+                - logs:FilterLogEvents
+
+  ApiGwAccount:
+    Type: AWS::ApiGateway::Account
+      Properties: 
+       CloudWatchRoleArn: !Ref ApiGwLogsGroup
+
+  ApiGwCloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /api-gateway-logs
+      RetentionInDays: 731
+
+  ccS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${BucketName}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - ExpirationInDays: 731
+            NoncurrentVersionExpirationInDays: 731
+            Status: Enabled
+      Tags:
+        - Key: Name
+          Value: character-data-bucket
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ccS3Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - s3:GetBucketAcl
+            Effect: Allow
+            Resource:
+              - !Sub arn:aws:s3:::${ccS3Bucket}
+            Principal:
+              Service: cloudtrail.amazonaws.com
+          - Action:
+              - s3:PutObject
+            Effect: Allow
+            Resource:
+              - !Sub arn:aws:s3:::${ccS3Bucket}/*
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+
+  # Lambda
+  Lambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/
+      Handler: lambda_function.lambda_handler
+      Runtime: 3.8
+      Timeout: 30
+      MemorySize: 128
+      Role: !Ref LambdaRole
+      Environment:
+        Variables:
+          AWS_S3_BUCKET_NAME: !Ref CharacterDataS3Bucket
+      Events:
+        ccapi:
+          Type: Api
+          Properties:
+            Path: '/'
+            Method: POST
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LambdaRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - sts:AssumeRole
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+      Policies:
+        - PolicyName: LambdaPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource:
+                  - !Ref ccS3Bucket
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                  - logs:PutLogEvents
+                  - logs:GetLogEvents
+                  - logs:FilterLogEvents
+                Resource: '*'
