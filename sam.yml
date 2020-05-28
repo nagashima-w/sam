@@ -14,7 +14,7 @@ Resources:
       Name: restapi
 
   GatewayResource:
-    Type: "AWS::ApiGateway::Resource"
+    Type: AWS::ApiGateway::Resource
     Properties:
       RestApiId: !Ref Api
       ParentId: !GetAtt Api.RootResourceId  
@@ -36,7 +36,7 @@ Resources:
   LambdaPermission:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName: !Sub "${FunctionName}"
+      FunctionName: !Sub ${FunctionName}
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
 
