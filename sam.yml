@@ -7,29 +7,7 @@ Parameters:
     Description: "S3 Bucket Name"
 
 Resources:
-
-  Role:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-        - Effect: Allow
-          Action: sts:AssumeRole
-      Policies:
-        - PolicyName: !Sub ${ProductId}DatadogPolicy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Resource: '*'
-                Action:
-                - cloudwatch:*
-                - logs:*
-                - lambda:listfunctions*
-                - s3:*
-                - apigateway:*
-
+  #API Gateway
   RestAPI:
     Type: AWS::ApiGateway::RestApi
     Properties:
@@ -101,7 +79,8 @@ Resources:
       LogGroupName: /api-gateway-logs
       RetentionInDays: 731
 
-  ccS3Bucket:
+  #S3 Bucket
+  S3Bucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub ${BucketName}
@@ -123,7 +102,7 @@ Resources:
   BucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
-      Bucket: !Ref ccS3Bucket
+      Bucket: !Ref S3Bucket
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -131,14 +110,14 @@ Resources:
               - s3:GetBucketAcl
             Effect: Allow
             Resource:
-              - !Sub arn:aws:s3:::${ccS3Bucket}
+              - !Sub arn:aws:s3:::${S3Bucket}
             Principal:
               Service: cloudtrail.amazonaws.com
           - Action:
               - s3:PutObject
             Effect: Allow
             Resource:
-              - !Sub arn:aws:s3:::${ccS3Bucket}/*
+              - !Sub arn:aws:s3:::${S3Bucket}/*
             Condition:
               StringEquals:
                 s3:x-amz-acl: bucket-owner-full-control
@@ -185,7 +164,7 @@ Resources:
                 Action:
                   - s3:*
                 Resource:
-                  - !Ref ccS3Bucket
+                  - !Ref S3Bucket
               - Effect: Allow
                 Action:
                   - logs:CreateLogGroup
